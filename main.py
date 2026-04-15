@@ -1,80 +1,62 @@
+import os
+import time
+import json
+import random
+import threading
 import requests
 import websocket
-import json
-import time
-import os
-import random
+from flask import Flask
 
-# --- CONFIGURACIÓN (Render usa Variables de Entorno) ---
-# En Render ve a Settings -> Environment -> Add Environment Variable
+# --- MINI SERVIDOR WEB PARA RENDER ---
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is Online", 200
+
+def run_web_server():
+    # Render asigna un puerto automáticamente en la variable PORT
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+
+# --- CONFIGURACIÓN DEL BOT ---
 TOKEN = os.getenv("TOKEN", "dxKL7PEztCoPMy-1aBTb-TO7Ciam3SOg3NWEvJEAOzeNV7ZKTLaZuDV4TsKT-HMe")
-ROOM_ID = os.getenv("ROOM_ID", "01K86SQJMYWK2NN9WF3KC8WXCC") # ID actualizado de tu captura de red
+ROOM_ID = os.getenv("ROOM_ID", "01K86SQJMYWK2NN9WF3KC8WXCC")
 WS_URL = f"wss://stoat.chat/api/events?version=1&format=json&token={TOKEN}"
 
 def enviar_mensaje(texto):
     url = "https://stoat.chat/api/messages" 
-    headers = {
-        "Authorization": f"Bearer {TOKEN}",
-        "Content-Type": "application/json",
-        "User-Agent": "MintBot/1.0 (Render Hosting)"
-    }
+    headers = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
     payload = {"content": texto, "room_id": ROOM_ID}
     try:
-        r = requests.post(url, json=payload, headers=headers, timeout=10)
-        print(f"📡 Mensaje enviado: {r.status_code}")
-    except Exception as e:
-        print(f"❌ Error enviando mensaje: {e}")
+        requests.post(url, json=payload, headers=headers, timeout=10)
+    except:
+        pass
 
 def on_message(ws, message):
     try:
         data = json.loads(message)
-        # Filtro de eventos de mensaje según la API de Stoat
         if data.get("type") == "Message":
             contenido = data.get("content", "").lower().strip()
             usuario = data.get("author", {}).get("username", "")
-            
-            # Evitar que el bot se responda a sí mismo
             if usuario.lower() != "mintbot":
-                print(f"💬 {usuario}: {contenido}")
-                
-                # --- COMANDOS ---
                 if contenido == "!hola":
-                    enviar_mensaje(f"¡Hola @{usuario}! Estoy corriendo desde Render 🚀")
-                
+                    enviar_mensaje(f"¡Hola @{usuario}! Reportándome desde Render Gratis 🚀")
                 elif contenido == "!dado":
                     enviar_mensaje(f"🎲 @{usuario} lanzó: {random.randint(1, 6)}")
-                
-                elif contenido == "!ping":
-                    enviar_mensaje("🏓 ¡Pong! El bot está vivo.")
+    except:
+        pass
 
-    except Exception as e:
-        print(f"⚠️ Error procesando mensaje: {e}")
-
-def on_error(ws, error):
-    print(f"🔴 Error de WebSocket: {error}")
-
-def on_close(ws, close_status_code, close_msg):
-    print("🔄 Conexión perdida. Reiniciando en 10 segundos...")
-    time.sleep(10)
-
-def on_open(ws):
-    print("✅ MintBot conectado correctamente a Stoat.")
-    # Mensaje opcional al conectar
-    # enviar_mensaje("🤖 MintBot ha vuelto online.")
-
-if __name__ == "__main__":
-    print("启动 MintBot...") # Log de inicio
+def iniciar_bot():
     while True:
         try:
-            ws = websocket.WebSocketApp(
-                WS_URL,
-                on_message=on_message,
-                on_error=on_error,
-                on_close=on_close,
-                on_open=on_open
-            )
-            # El ping_interval es CLAVE en Render para que no maten el proceso
+            ws = websocket.WebSocketApp(WS_URL, on_message=on_message)
             ws.run_forever(ping_interval=30, ping_timeout=10)
-        except Exception as e:
-            print(f"💥 Crash crítico: {e}. Reiniciando...")
-            time.sleep(5)
+        except:
+            time.sleep(10)
+
+if __name__ == "__main__":
+    # 1. Iniciamos el servidor web en un hilo (Thread) para que Render esté feliz
+    threading.Thread(target=run_web_server).start()
+    # 2. Iniciamos el bot en el hilo principal
+    iniciar_bot()
