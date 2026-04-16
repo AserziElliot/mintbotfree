@@ -39,7 +39,7 @@ def on_message(ws, message):
         if data.get("type") == "Message":
             contenido = data.get("content", "").lower().strip()
             usuario = data.get("author", {}).get("username", "")
-            if usuario.lower() != "mintbot":
+           if "mintbot" not in usuario.lower():
                 if contenido == "!hola":
                     enviar_mensaje(f"¡Hola @{usuario}! Reportándome desde Render Gratis 🚀")
                 elif contenido == "!dado":
