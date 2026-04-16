@@ -7,56 +7,139 @@ import requests
 import websocket
 from flask import Flask
 
-# --- MINI SERVIDOR WEB PARA RENDER ---
+# Servidor web para que Render mantenga el servicio activo
 app = Flask(__name__)
 
 @app.route('/')
-def home():
-    return "Bot is Online", 200
+def health():
+    return "MintBot is Online", 200
 
-def run_web_server():
-    # Render asigna un puerto automáticamente en la variable PORT
+def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 
-# --- CONFIGURACIÓN DEL BOT ---
-TOKEN = os.getenv("TOKEN", "dxKL7PEztCoPMy-1aBTb-TO7Ciam3SOg3NWEvJEAOzeNV7ZKTLaZuDV4TsKT-HMe")
-ROOM_ID = os.getenv("ROOM_ID", "01K86SQJMYWK2NN9WF3KC8WXCC")
+# --- CONFIGURACIÓN ---
+TOKEN = os.getenv("TOKEN")
+ROOM_ID = os.getenv("ROOM_ID")
 WS_URL = f"wss://stoat.chat/api/events?version=1&format=json&token={TOKEN}"
 
 def enviar_mensaje(texto):
     url = "https://stoat.chat/api/messages" 
-    headers = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {TOKEN}",
+        "Content-Type": "application/json"
+    }
     payload = {"content": texto, "room_id": ROOM_ID}
     try:
         requests.post(url, json=payload, headers=headers, timeout=10)
-    except:
-        pass
+    except Exception as e:
+        print(f"Error al enviar: {e}")
 
 def on_message(ws, message):
     try:
         data = json.loads(message)
         if data.get("type") == "Message":
             contenido = data.get("content", "").lower().strip()
-            usuario = data.get("author", {}).get("username", "")
-           if "mintbot" not in usuario.lower():
+            # Obtenemos el nombre de usuario de forma segura
+            usuario_obj = data.get("author", {})
+            usuario_nombre = usuario_obj.get("username", "").lower()
+            
+            # Solo respondemos si el mensaje NO viene de nuestro bot
+            if "mintbot" not in usuario_nombre:
                 if contenido == "!hola":
-                    enviar_mensaje(f"¡Hola @{usuario}! Reportándome desde Render Gratis 🚀")
+                    enviar_mensaje(f"¡Hola! MintBot reportándose 🚀")
                 elif contenido == "!dado":
-                    enviar_mensaje(f"🎲 @{usuario} lanzó: {random.randint(1, 6)}")
-    except:
-        pass
+                    enviar_mensaje(f"🎲 Salió un: {random.randint(1, 6)}")
+    except Exception as e:
+        print(f"Error en mensaje: {e}")
 
-def iniciar_bot():
+def bot_loop():
     while True:
         try:
-            ws = websocket.WebSocketApp(WS_URL, on_message=on_message)
+            print("🚀 Intentando conectar al chat...")
+            ws = websocket.WebSocketApp(
+                WS_URL, 
+                on_message=on_message,
+                on_open=lambda ws: print("✅ ¡CONECTADO!")
+            )
             ws.run_forever(ping_interval=30, ping_timeout=10)
         except:
             time.sleep(10)
 
 if __name__ == "__main__":
-    # 1. Iniciamos el servidor web en un hilo (Thread) para que Render esté feliz
-    threading.Thread(target=run_web_server).start()
-    # 2. Iniciamos el bot en el hilo principal
-    iniciar_bot()
+    # Iniciar servidor web en segundo plano
+    threading.Thread(target=run_flask, daemon=True).start()
+    # Iniciar bot
+    bot_loop()import os
+import time
+import json
+import random
+import threading
+import requests
+import websocket
+from flask import Flask
+
+# Servidor web para que Render mantenga el servicio activo
+app = Flask(__name__)
+
+@app.route('/')
+def health():
+    return "MintBot is Online", 200
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+
+# --- CONFIGURACIÓN ---
+TOKEN = os.getenv("TOKEN")
+ROOM_ID = os.getenv("ROOM_ID")
+WS_URL = f"wss://stoat.chat/api/events?version=1&format=json&token={TOKEN}"
+
+def enviar_mensaje(texto):
+    url = "https://stoat.chat/api/messages" 
+    headers = {
+        "Authorization": f"Bearer {TOKEN}",
+        "Content-Type": "application/json"
+    }
+    payload = {"content": texto, "room_id": ROOM_ID}
+    try:
+        requests.post(url, json=payload, headers=headers, timeout=10)
+    except Exception as e:
+        print(f"Error al enviar: {e}")
+
+def on_message(ws, message):
+    try:
+        data = json.loads(message)
+        if data.get("type") == "Message":
+            contenido = data.get("content", "").lower().strip()
+            # Obtenemos el nombre de usuario de forma segura
+            usuario_obj = data.get("author", {})
+            usuario_nombre = usuario_obj.get("username", "").lower()
+            
+            # Solo respondemos si el mensaje NO viene de nuestro bot
+            if "mintbot" not in usuario_nombre:
+                if contenido == "!hola":
+                    enviar_mensaje(f"¡Hola! MintBot reportándose 🚀")
+                elif contenido == "!dado":
+                    enviar_mensaje(f"🎲 Salió un: {random.randint(1, 6)}")
+    except Exception as e:
+        print(f"Error en mensaje: {e}")
+
+def bot_loop():
+    while True:
+        try:
+            print("🚀 Intentando conectar al chat...")
+            ws = websocket.WebSocketApp(
+                WS_URL, 
+                on_message=on_message,
+                on_open=lambda ws: print("✅ ¡CONECTADO!")
+            )
+            ws.run_forever(ping_interval=30, ping_timeout=10)
+        except:
+            time.sleep(10)
+
+if __name__ == "__main__":
+    # Iniciar servidor web en segundo plano
+    threading.Thread(target=run_flask, daemon=True).start()
+    # Iniciar bot
+    bot_loop()
