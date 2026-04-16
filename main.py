@@ -29,7 +29,7 @@ ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 print("WS_URL generada correctamente")
 
 # ============================
-# SERVIDOR FLASK (RENDER)
+# FLASK
 # ============================
 app = Flask(__name__)
 
@@ -42,7 +42,7 @@ def health():
     return {"status": "ok", "bot": BOT_USERNAME}, 200
 
 # ============================
-# ENVIAR MENSAJES
+# ENVIAR MENSAJE
 # ============================
 def enviar_mensaje(texto):
     payload = {"content": texto, "room_id": ROOM_ID}
@@ -58,7 +58,7 @@ def enviar_mensaje(texto):
 # ============================
 def preguntar_claude(pregunta):
     if not ANTHROPIC_API_KEY:
-        return "❌ Falta ANTHROPIC_API_KEY."
+        return "❌ Falta ANTHROPIC_API_KEY en las variables de entorno."
     headers = {
         "x-api-key": ANTHROPIC_API_KEY,
         "anthropic-version": "2023-06-01",
@@ -67,7 +67,10 @@ def preguntar_claude(pregunta):
     payload = {
         "model": "claude-sonnet-4-20250514",
         "max_tokens": 300,
-        "system": "Eres un bot simpático en un chat llamado Stoat. Responde breve y amigable. Máximo 2-3 oraciones.",
+        "system": (
+            "Eres MintBot, un bot simpático en un chat llamado Stoat. "
+            "Responde de forma breve, clara y amigable. Máximo 2-3 oraciones."
+        ),
         "messages": [{"role": "user", "content": pregunta}]
     }
     try:
@@ -76,47 +79,16 @@ def preguntar_claude(pregunta):
         if "content" in data and data["content"]:
             return data["content"][0]["text"]
         print("Respuesta inesperada de Claude:", data)
-        return "🤖 Sin respuesta de Claude."
+        return "🤖 No pude obtener respuesta de Claude."
     except Exception as e:
         print(f"Error llamando a Claude: {e}")
         return "❌ Error al conectar con Claude AI."
 
 # ============================
-# MANEJO DE MENSAJES
+# WEBSOCKET CALLBACKS
 # ============================
-def on_message(ws, message):
-    try:
-        data = json.loads(message)
-        if data.get("type") != "Message":
-            return
-
-        autor = data["author"]["username"]
-        contenido = data["content"].strip()
-        print(f"[{autor}] dijo: {contenido}")
-
-        if autor.lower() == BOT_USERNAME:
-            return
-
-        if contenido.startswith("!hola"):
-            enviar_mensaje(f"¡Hola, {autor}! 😎🤖")
-        elif contenido.startswith("!dado"):
-            enviar_mensaje(f"🎲 {autor}, tu número es: {random.randint(1, 6)}")
-        elif contenido.startswith("!ping"):
-            enviar_mensaje("Pong 🏓")
-        elif contenido.startswith("!ayuda"):
-            enviar_mensaje("📖 Comandos: !hola, !dado, !ping, !ai <pregunta>, !ayuda")
-        elif contenido.startswith("!ai "):
-            pregunta = contenido[4:].strip()
-            enviar_mensaje("⏳ Consultando a Claude AI...")
-            threading.Thread(
-                target=lambda: enviar_mensaje(f"🤖 {preguntar_claude(pregunta)}"),
-                daemon=True
-            ).start()
-        elif contenido.startswith("!ai"):
-            enviar_mensaje("❓ Uso: !ai <tu pregunta>")
-
-    except Exception as e:
-        print(f"Error procesando mensaje: {e}")
+def on_open(ws):
+    print("✅ Conectado al WebSocket de Stoat")
 
 def on_error(ws, error):
     print(f"❌ Error WS: {error} | Tipo: {type(error)}")
@@ -124,17 +96,75 @@ def on_error(ws, error):
 def on_close(ws, close_status_code, close_msg):
     print(f"🔌 WS cerrado - código: {close_status_code}, msg: {close_msg}")
 
-def on_open(ws):
-    print("✅ Conectado al WebSocket de Stoat")
+def on_message(ws, message):
+    try:
+        data = json.loads(message)
+
+        if data.get("type") != "Message":
+            return
+
+        autor = data["author"]["username"]
+        contenido = data["content"].strip()
+        print(f"[{autor}]: {contenido}")
+
+        # Ignorar mensajes propios
+        if autor.lower() == BOT_USERNAME:
+            return
+
+        # Comandos
+        if contenido.startswith("!hola"):
+            enviar_mensaje(f"¡Hola, {autor}! Soy MintBot 😎🤖")
+
+        elif contenido.startswith("!dado"):
+            enviar_mensaje(f"🎲 {autor}, sacaste un: {random.randint(1, 6)}")
+
+        elif contenido.startswith("!ping"):
+            enviar_mensaje("Pong 🏓")
+
+        elif contenido.startswith("!dado2"):
+            a, b = random.randint(1, 6), random.randint(1, 6)
+            enviar_mensaje(f"🎲🎲 {autor}, sacaste: {a} y {b} (total: {a+b})")
+
+        elif contenido.startswith("!moneda"):
+            enviar_mensaje(f"🪙 {autor}: {'Cara' if random.random() > 0.5 else 'Cruz'}")
+
+        elif contenido.startswith("!ai "):
+            pregunta = contenido[4:].strip()
+            if not pregunta:
+                enviar_mensaje("❓ Escribe algo después de !ai")
+                return
+            enviar_mensaje("⏳ Consultando a Claude AI...")
+            threading.Thread(
+                target=lambda: enviar_mensaje(f"🤖 {preguntar_claude(pregunta)}"),
+                daemon=True
+            ).start()
+
+        elif contenido.startswith("!ai"):
+            enviar_mensaje("❓ Uso correcto: !ai <tu pregunta>")
+
+        elif contenido.startswith("!ayuda"):
+            enviar_mensaje(
+                "📖 Comandos de MintBot:\n"
+                "!hola — Saludo\n"
+                "!ping — Comprueba si estoy activo\n"
+                "!dado — Tira un dado (1-6)\n"
+                "!dado2 — Tira dos dados\n"
+                "!moneda — Cara o Cruz\n"
+                "!ai <pregunta> — Pregunta a Claude AI\n"
+                "!ayuda — Esta lista"
+            )
+
+    except Exception as e:
+        print(f"Error procesando mensaje: {e}")
 
 # ============================
-# LOOP DE RECONEXIÓN (en hilo secundario)
+# LOOP WEBSOCKET CON RECONEXIÓN
 # ============================
 def iniciar_ws():
     intento = 0
     while True:
         intento += 1
-        print(f"🔄 Intento de conexión #{intento}")
+        print(f"🔄 Intento de conexión #{intento}...")
         try:
             ws = WebSocketApp(
                 WS_URL,
@@ -146,15 +176,15 @@ def iniciar_ws():
             )
             ws.run_forever(ping_interval=30, ping_timeout=10)
         except Exception as e:
-            print(f"💥 Error crítico en WS: {e} | Tipo: {type(e)}")
+            print(f"💥 Error crítico: {e} | Tipo: {type(e)}")
         print("⏳ Reintentando en 5 segundos...")
         time.sleep(5)
 
 # ============================
-# INICIO DEL BOT
+# MAIN
 # ============================
 if __name__ == "__main__":
-    print("🚀 Iniciando bot...")
-    # WS en hilo secundario, Flask en el principal (así Render detecta el puerto)
+    print("🚀 Iniciando MintBot...")
+    # WebSocket en hilo secundario, Flask en el principal
     threading.Thread(target=iniciar_ws, daemon=True).start()
     app.run(host="0.0.0.0", port=10000)
