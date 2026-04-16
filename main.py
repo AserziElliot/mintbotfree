@@ -26,7 +26,7 @@ WS_URL = f"wss://api.stoat.xyz/ws?token={TOKEN}"
 API_URL = "https://api.stoat.xyz/messages"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 
-print(f"WS_URL generada correctamente")
+print("WS_URL generada correctamente")
 
 # ============================
 # SERVIDOR FLASK (RENDER)
@@ -41,21 +41,12 @@ def home():
 def health():
     return {"status": "ok", "bot": BOT_USERNAME}, 200
 
-def run_web():
-    app.run(host="0.0.0.0", port=10000)
-
 # ============================
 # ENVIAR MENSAJES
 # ============================
 def enviar_mensaje(texto):
-    payload = {
-        "content": texto,
-        "room_id": ROOM_ID
-    }
-    headers = {
-        "Authorization": TOKEN,
-        "Content-Type": "application/json"
-    }
+    payload = {"content": texto, "room_id": ROOM_ID}
+    headers = {"Authorization": TOKEN, "Content-Type": "application/json"}
     try:
         r = requests.post(API_URL, json=payload, headers=headers, timeout=10)
         print(f"Mensaje enviado ({r.status_code}): {r.text}")
@@ -67,8 +58,7 @@ def enviar_mensaje(texto):
 # ============================
 def preguntar_claude(pregunta):
     if not ANTHROPIC_API_KEY:
-        return "❌ La API de Claude no está configurada (falta ANTHROPIC_API_KEY)."
-
+        return "❌ Falta ANTHROPIC_API_KEY."
     headers = {
         "x-api-key": ANTHROPIC_API_KEY,
         "anthropic-version": "2023-06-01",
@@ -77,19 +67,16 @@ def preguntar_claude(pregunta):
     payload = {
         "model": "claude-sonnet-4-20250514",
         "max_tokens": 300,
-        "system": "Eres un bot simpático en un chat llamado Stoat. Responde de forma breve, clara y amigable. Máximo 2-3 oraciones.",
-        "messages": [
-            {"role": "user", "content": pregunta}
-        ]
+        "system": "Eres un bot simpático en un chat llamado Stoat. Responde breve y amigable. Máximo 2-3 oraciones.",
+        "messages": [{"role": "user", "content": pregunta}]
     }
     try:
         r = requests.post(ANTHROPIC_URL, json=payload, headers=headers, timeout=20)
         data = r.json()
-        if "content" in data and len(data["content"]) > 0:
+        if "content" in data and data["content"]:
             return data["content"][0]["text"]
-        else:
-            print("Respuesta inesperada de Claude:", data)
-            return "🤖 No pude obtener una respuesta de Claude."
+        print("Respuesta inesperada de Claude:", data)
+        return "🤖 Sin respuesta de Claude."
     except Exception as e:
         print(f"Error llamando a Claude: {e}")
         return "❌ Error al conectar con Claude AI."
@@ -100,75 +87,54 @@ def preguntar_claude(pregunta):
 def on_message(ws, message):
     try:
         data = json.loads(message)
-
         if data.get("type") != "Message":
             return
 
         autor = data["author"]["username"]
         contenido = data["content"].strip()
-
         print(f"[{autor}] dijo: {contenido}")
 
         if autor.lower() == BOT_USERNAME:
             return
 
         if contenido.startswith("!hola"):
-            enviar_mensaje(f"¡Hola, {autor}! Soy un bot con IA integrada 😎🤖")
-
+            enviar_mensaje(f"¡Hola, {autor}! 😎🤖")
         elif contenido.startswith("!dado"):
             enviar_mensaje(f"🎲 {autor}, tu número es: {random.randint(1, 6)}")
-
         elif contenido.startswith("!ping"):
             enviar_mensaje("Pong 🏓")
-
         elif contenido.startswith("!ayuda"):
-            enviar_mensaje(
-                "📖 Comandos disponibles:\n"
-                "!hola - Saludo\n"
-                "!dado - Tira un dado\n"
-                "!ping - Comprueba si estoy activo\n"
-                "!ai <pregunta> - Pregúntame cualquier cosa con IA\n"
-                "!ayuda - Esta lista"
-            )
-
+            enviar_mensaje("📖 Comandos: !hola, !dado, !ping, !ai <pregunta>, !ayuda")
         elif contenido.startswith("!ai "):
             pregunta = contenido[4:].strip()
-            if not pregunta:
-                enviar_mensaje("❓ Escribe una pregunta después de !ai")
-                return
             enviar_mensaje("⏳ Consultando a Claude AI...")
             threading.Thread(
                 target=lambda: enviar_mensaje(f"🤖 {preguntar_claude(pregunta)}"),
                 daemon=True
             ).start()
-
         elif contenido.startswith("!ai"):
-            enviar_mensaje("❓ Uso correcto: !ai <tu pregunta>")
+            enviar_mensaje("❓ Uso: !ai <tu pregunta>")
 
     except Exception as e:
         print(f"Error procesando mensaje: {e}")
 
-# ============================
-# CALLBACKS DEL WEBSOCKET
-# ============================
 def on_error(ws, error):
-    print(f"❌ Error WS: {error}")
-    print(f"   Tipo de error: {type(error)}")
+    print(f"❌ Error WS: {error} | Tipo: {type(error)}")
 
 def on_close(ws, close_status_code, close_msg):
-    print(f"🔌 Conexión cerrada - código: {close_status_code}, mensaje: {close_msg}")
+    print(f"🔌 WS cerrado - código: {close_status_code}, msg: {close_msg}")
 
 def on_open(ws):
     print("✅ Conectado al WebSocket de Stoat")
 
 # ============================
-# LOOP DE RECONEXIÓN
+# LOOP DE RECONEXIÓN (en hilo secundario)
 # ============================
 def iniciar_ws():
     intento = 0
     while True:
         intento += 1
-        print(f"🔄 Intento de conexión #{intento} a: wss://api.stoat.xyz/ws")
+        print(f"🔄 Intento de conexión #{intento}")
         try:
             ws = WebSocketApp(
                 WS_URL,
@@ -178,14 +144,9 @@ def iniciar_ws():
                 on_error=on_error,
                 on_close=on_close
             )
-            ws.run_forever(
-                ping_interval=30,
-                ping_timeout=10
-            )
+            ws.run_forever(ping_interval=30, ping_timeout=10)
         except Exception as e:
-            print(f"💥 Error crítico en WS: {e}")
-            print(f"   Tipo: {type(e)}")
-
+            print(f"💥 Error crítico en WS: {e} | Tipo: {type(e)}")
         print("⏳ Reintentando en 5 segundos...")
         time.sleep(5)
 
@@ -194,6 +155,6 @@ def iniciar_ws():
 # ============================
 if __name__ == "__main__":
     print("🚀 Iniciando bot...")
-    threading.Thread(target=run_web, daemon=True).start()
-    time.sleep(1)
-    iniciar_ws()
+    # WS en hilo secundario, Flask en el principal (así Render detecta el puerto)
+    threading.Thread(target=iniciar_ws, daemon=True).start()
+    app.run(host="0.0.0.0", port=10000)
