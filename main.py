@@ -15,15 +15,18 @@ ROOM_ID = os.getenv("ROOM_ID")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 BOT_USERNAME = os.getenv("BOT_USERNAME", "mintbot").lower()
 
+print(f"TOKEN configurado: {'Sí' if TOKEN else 'NO'}")
+print(f"ROOM_ID configurado: {'Sí' if ROOM_ID else 'NO'}")
+print(f"BOT_USERNAME: {BOT_USERNAME}")
+
 if not TOKEN or not ROOM_ID:
     raise Exception("Faltan variables de entorno: TOKEN o ROOM_ID")
-
-if not ANTHROPIC_API_KEY:
-    print("ADVERTENCIA: ANTHROPIC_API_KEY no está configurada. El comando !ai no funcionará.")
 
 WS_URL = f"wss://api.stoat.xyz/ws?token={TOKEN}"
 API_URL = "https://api.stoat.xyz/messages"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
+
+print(f"WS_URL generada correctamente")
 
 # ============================
 # SERVIDOR FLASK (RENDER)
@@ -98,7 +101,6 @@ def on_message(ws, message):
     try:
         data = json.loads(message)
 
-        # Solo procesar mensajes de tipo "Message"
         if data.get("type") != "Message":
             return
 
@@ -107,11 +109,8 @@ def on_message(ws, message):
 
         print(f"[{autor}] dijo: {contenido}")
 
-        # Evitar responderse a sí mismo
         if autor.lower() == BOT_USERNAME:
             return
-
-        # ---- Comandos ----
 
         if contenido.startswith("!hola"):
             enviar_mensaje(f"¡Hola, {autor}! Soy un bot con IA integrada 😎🤖")
@@ -138,7 +137,6 @@ def on_message(ws, message):
                 enviar_mensaje("❓ Escribe una pregunta después de !ai")
                 return
             enviar_mensaje("⏳ Consultando a Claude AI...")
-            # Llamar a Claude en un hilo para no bloquear el WebSocket
             threading.Thread(
                 target=lambda: enviar_mensaje(f"🤖 {preguntar_claude(pregunta)}"),
                 daemon=True
@@ -154,10 +152,11 @@ def on_message(ws, message):
 # CALLBACKS DEL WEBSOCKET
 # ============================
 def on_error(ws, error):
-    print(f"Error WS: {error}")
+    print(f"❌ Error WS: {error}")
+    print(f"   Tipo de error: {type(error)}")
 
 def on_close(ws, close_status_code, close_msg):
-    print(f"Conexión cerrada (código: {close_status_code}): {close_msg}")
+    print(f"🔌 Conexión cerrada - código: {close_status_code}, mensaje: {close_msg}")
 
 def on_open(ws):
     print("✅ Conectado al WebSocket de Stoat")
@@ -166,24 +165,28 @@ def on_open(ws):
 # LOOP DE RECONEXIÓN
 # ============================
 def iniciar_ws():
+    intento = 0
     while True:
+        intento += 1
+        print(f"🔄 Intento de conexión #{intento} a: wss://api.stoat.xyz/ws")
         try:
             ws = WebSocketApp(
                 WS_URL,
-                header={"Authorization": TOKEN},  # Header extra por si la API lo requiere
+                header={"Authorization": TOKEN},
                 on_open=on_open,
                 on_message=on_message,
                 on_error=on_error,
                 on_close=on_close
             )
             ws.run_forever(
-                ping_interval=30,   # Envía ping cada 30s para mantener la conexión viva
-                ping_timeout=10     # Si no responde en 10s, reconecta
+                ping_interval=30,
+                ping_timeout=10
             )
         except Exception as e:
-            print(f"Error crítico en WS: {e}")
+            print(f"💥 Error crítico en WS: {e}")
+            print(f"   Tipo: {type(e)}")
 
-        print("🔄 Reintentando conexión en 5 segundos...")
+        print("⏳ Reintentando en 5 segundos...")
         time.sleep(5)
 
 # ============================
@@ -192,4 +195,5 @@ def iniciar_ws():
 if __name__ == "__main__":
     print("🚀 Iniciando bot...")
     threading.Thread(target=run_web, daemon=True).start()
+    time.sleep(1)
     iniciar_ws()
