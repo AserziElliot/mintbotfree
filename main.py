@@ -1,68 +1,115 @@
 import os
-import threading
-import time
 import json
 import random
+import threading
+import time
 import requests
-import websocket
 from flask import Flask
+from websocket import WebSocketApp
 
-# 1. Configuración de la Web (Obligatorio para Render Free)
+# ============================
+# VARIABLES DE ENTORNO
+# ============================
+TOKEN = os.getenv("TOKEN")
+ROOM_ID = os.getenv("ROOM_ID")
+
+if not TOKEN or not ROOM_ID:
+    raise Exception("Faltan variables de entorno: TOKEN o ROOM_ID")
+
+WS_URL = f"wss://api.stoat.xyz/ws?token={TOKEN}"
+API_URL = "https://api.stoat.xyz/messages"
+
+# ============================
+# SERVIDOR FLASK (RENDER)
+# ============================
 app = Flask(__name__)
 
-@app.route('/')
-def health():
-    return "MintBot Status: Online", 200
+@app.route("/")
+def home():
+    return "Stoat Bot Online", 200
 
 def run_web():
-    # Render usa el puerto 10000 por defecto
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host="0.0.0.0", port=10000)
 
-# 2. Configuración del Bot (Leído de tus Variables de Entorno)
-TOKEN = os.environ.get("TOKEN")
-ROOM_ID = os.environ.get("ROOM_ID", "01K86SQJMYWK2NN9WF3KC8WXCC")
-WS_URL = f"wss://stoat.chat/api/events?version=1&format=json&token={TOKEN}"
-
+# ============================
+# ENVIAR MENSAJES
+# ============================
 def enviar_mensaje(texto):
-    url = "https://stoat.chat/api/messages" 
-    headers = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
-    payload = {"content": texto, "room_id": ROOM_ID}
-    try:
-        requests.post(url, json=payload, headers=headers, timeout=5)
-    except:
-        pass
+    payload = {
+        "content": texto,
+        "room_id": ROOM_ID
+    }
 
+    try:
+        r = requests.post(API_URL, json=payload, headers={"Authorization": TOKEN})
+        print("Mensaje enviado:", r.text)
+    except Exception as e:
+        print("Error enviando mensaje:", e)
+
+# ============================
+# MANEJO DE MENSAJES
+# ============================
 def on_message(ws, message):
     try:
         data = json.loads(message)
-        if data.get("type") == "Message":
-            user = data.get("author", {}).get("username", "").lower()
-            content = data.get("content", "").lower()
-            
-            # Evitar que el bot se responda a sí mismo
-            if "mintbot" not in user:
-                if "!hola" in content:
-                    enviar_mensaje(f"¡Hola! MintBot reportándose desde Render 🚀")
-                elif "!dado" in content:
-                    enviar_mensaje(f"🎲 Salió un: {random.randint(1, 6)}")
-    except:
-        pass
 
-def run_bot():
+        if data.get("type") != "Message":
+            return
+
+        autor = data["author"]["username"]
+        contenido = data["content"]
+
+        print(f"[{autor}] dijo: {contenido}")
+
+        # Evitar responderse a sí mismo
+        if autor.lower() == "mintbot":
+            return
+
+        # Comandos
+        if contenido.startswith("!hola"):
+            enviar_mensaje("¡Hola! Soy un bot funcionando en Render 😎")
+
+        elif contenido.startswith("!dado"):
+            enviar_mensaje(f"🎲 Tu número es: {random.randint(1, 6)}")
+
+        elif contenido.startswith("!ping"):
+            enviar_mensaje("Pong 🏓")
+
+    except Exception as e:
+        print("Error procesando mensaje:", e)
+
+def on_error(ws, error):
+    print("Error WS:", error)
+
+def on_close(ws, close_status_code, close_msg):
+    print("Conexión cerrada, intentando reconectar...")
+
+def on_open(ws):
+    print("Conectado al WebSocket de Stoat")
+
+# ============================
+# LOOP DE RECONEXIÓN
+# ============================
+def iniciar_ws():
     while True:
         try:
-            # Usamos el WS_URL que ya tiene el token inyectado
-            ws = websocket.WebSocketApp(WS_URL, on_message=on_message)
-            ws.run_forever(ping_interval=30, ping_timeout=10)
-        except:
-            time.sleep(10)
+            ws = WebSocketApp(
+                WS_URL,
+                on_open=on_open,
+                on_message=on_message,
+                on_error=on_error,
+                on_close=on_close
+            )
+            ws.run_forever()
+        except Exception as e:
+            print("Error crítico:", e)
 
+        print("Reintentando en 5 segundos...")
+        time.sleep(5)
+
+# ============================
+# INICIO DEL BOT
+# ============================
 if __name__ == "__main__":
-    # Iniciamos la web en un segundo plano
-    t = threading.Thread(target=run_web)
-    t.daemon = True
-    t.start()
-    
-    # Iniciamos el bot en el hilo principal
-    run_bot()
+    threading.Thread(target=run_web, daemon=True).start()
+    iniciar_ws()
